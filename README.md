@@ -2,8 +2,7 @@
 
 In-browser vector editor for drawing a Home Assistant floor plan: draw
 rooms, snap walls to a grid and to each other, edit wall lengths, pan/zoom.
-This is the standalone prototype stage — entity binding and the actual HA
-custom card wrapper come next.
+Entity binding / live state overlay is the next step, not yet built.
 
 `SPEC.md` documents the behavioral contract (especially the overlap rules,
 which are subtler than they look) and the module structure — read it
@@ -13,20 +12,88 @@ before adding to `src/`.
 src/geometry.js        pure math (polygon overlap, etc.) — test/geometry.test.js
 src/interactions.js    decision logic (snapping, drag, zoom) — test/interactions.test.js
 src/render.js          DOM building — test/render.test.js (jsdom)
-src/index.html         thin app shell wiring the above together
+src/index.html         standalone full-page dev harness (not shipped to HA)
+src/floorplan-card.js  the actual HA Lovelace card (custom element)
 test/e2e/               Playwright — DOM/event-timing bugs the above can't see
+dev/card-harness.html   loads floorplan-card.js as HA would, without HA
 ```
 
-## Running it
+## Running the standalone dev version
 
 ```
 npm install
 npm run dev     # serves src/ at http://localhost:8934
 ```
 
-Open `http://localhost:8934/index.html`. It has to be served over HTTP, not
-opened as a `file://` — the app imports `geometry.js` as an ES module, and
-browsers block module imports from the filesystem.
+Open `http://localhost:8934/index.html`. This is the fastest loop for
+iterating on geometry/snapping/drag logic — full page, no HA needed. It
+has to be served over HTTP, not opened as `file://`, since it imports
+`geometry.js` etc. as ES modules and browsers block that from the
+filesystem.
+
+## Testing the card without Home Assistant
+
+`floorplan-card.js` is a real custom element (`<floorplan-card>`), so you
+can load and drive it in a plain browser tab before ever touching an HA
+instance:
+
+```
+npm run dev:card   # serves the repo root at http://localhost:8935
+```
+
+Open `http://localhost:8935/dev/card-harness.html`. It registers the
+element, calls `setConfig({})` and sets a stub `hass`, exactly like
+Lovelace would — everything (drawing, dragging, zoom, the `config-changed`
+persistence event) works the same as inside real HA.
+
+## Installing it in Home Assistant
+
+1. **Build the single-file bundle** — HA loads one JS file as a Lovelace
+   resource; it doesn't resolve the multi-file ES module imports `src/`
+   uses for dev convenience.
+   ```
+   npm run build   # -> dist/floorplan-card.js
+   ```
+2. **Copy it into your HA config's `www/` folder** (create the folder if
+   it doesn't exist — anything under `config/www/` is served at `/local/`):
+   ```
+   cp dist/floorplan-card.js /path/to/homeassistant/config/www/floorplan-card.js
+   ```
+3. **Register it as a Lovelace resource** — Settings → Dashboards → ⋮ menu
+   → Resources → Add Resource:
+   - URL: `/local/floorplan-card.js`
+   - Resource type: JavaScript Module
+
+   (Or in YAML mode, under `lovelace.resources` /
+   `configuration.yaml`: `- url: /local/floorplan-card.js` `  type: module`.)
+4. **Add the card to a dashboard** — Edit Dashboard → Add Card → search
+   won't find it since it's not registered with HA's card picker; instead
+   add a **Manual** card with:
+   ```yaml
+   type: custom:floorplan-card
+   ```
+5. Draw a floor plan; edits save into that card's own dashboard config
+   automatically (see `SPEC.md`, "Persistence" — this is card-config
+   storage, not a backend integration, and that's a deliberate scope
+   choice for now, not a limitation to work around).
+
+**Iterating without re-copying by hand every time:** either symlink instead
+of copying —
+```
+ln -s $(pwd)/dist/floorplan-card.js /path/to/homeassistant/config/www/floorplan-card.js
+```
+and re-run `npm run build` after each change — or, if HA is a separate
+machine/container, script the copy as part of `npm run build` once you
+know the target path. HA aggressively caches JS resources; after
+rebuilding, a hard refresh (Ctrl+Shift+R) is usually necessary, and if
+that's not enough, bump the resource URL's version query string
+(`/local/floorplan-card.js?v=2`) in the resource config to force a refetch.
+
+**Distributing it later via HACS** (once this is further along): HACS
+custom repositories work from a GitHub repo + a release/tag containing the
+built `dist/floorplan-card.js` — same single-file requirement, just
+automated fetching/updating instead of manual copy. Not worth setting up
+until the card itself is further along.
 
 ## Tests
 
@@ -45,7 +112,11 @@ API.)
 `npm run test:e2e` covers things that are specifically about real-browser
 DOM/event timing (a click getting cancelled by a mid-gesture re-render, a
 touch tap with no preceding hover, actual pixel layout) that jsdom doesn't
-simulate.
+simulate. It currently drives `src/index.html`, not the card — the card's
+own wiring is close enough to index.html's that this is reasonable
+coverage for now, but if `floorplan-card.js` grows card-specific logic
+(entity binding, hass-state handling), give it its own e2e spec rather
+than assuming index.html's coverage still applies.
 
 ## Before adding a new feature
 
@@ -66,4 +137,7 @@ Wire `npm test` into GitLab CI (or wherever this ends up living) as a
 required check on merge requests — two-line `.gitlab-ci.yml` job running
 `npm ci && npm test`. `npm run test:e2e` is heavier (needs a browser) and
 is a reasonable candidate for a slower/separate CI stage rather than
-blocking every push.
+blocking every push. `npm run build` is cheap enough to also run in CI as
+a "does the bundle still compile" smoke check, even before you're ready to
+automate deployment to an actual HA instance.
+

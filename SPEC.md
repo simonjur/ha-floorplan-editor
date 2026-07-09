@@ -9,7 +9,7 @@ rule will come back.
 ## Module structure
 
 ```
-src/geometry.js       pure math — polygon overlap, point-in-polygon, etc.
+src/geometry.js        pure math — polygon overlap, point-in-polygon, etc.
                        zero DOM dependency. Unit-tested in test/geometry.test.js.
 
 src/interactions.js    the actual decisions in response to input — snapping,
@@ -25,11 +25,22 @@ src/render.js          builds/updates the DOM (SVG elements, lists) from
                        layout (jsdom doesn't compute that; see test/e2e/
                        for pixel/browser-accurate behavior).
 
-src/index.html          the app shell: holds mutable state, wires DOM events,
-                       calls into interactions.js for decisions and render.js
-                       for output. Should stay thin — if you're about to add
-                       a snapping rule or an overlap check here, it belongs
-                       in interactions.js next to its tests instead.
+src/index.html          standalone full-page app shell — dev/testing only,
+                       not what ships to Home Assistant. Wires interactions.js
+                       + render.js together for a browser tab. Kept around
+                       because it's the fastest loop for iterating on
+                       geometry/interaction changes without an HA instance.
+
+src/floorplan-card.js   the actual Home Assistant Lovelace card — a custom
+                       element implementing setConfig/hass/getCardSize,
+                       rendering into its own shadow DOM. Same orchestration
+                       role as index.html, just re-hosted as a component
+                       that lives inside someone else's page instead of
+                       owning the whole page. Not unit-tested directly (it's
+                       wiring, like index.html); covered by loading it as a
+                       real custom element in a browser — see
+                       dev/card-harness.html and README's "Testing the card
+                       without Home Assistant".
 ```
 
 The rule of thumb for "which file does this go in": if a function's
@@ -37,7 +48,33 @@ correctness could be checked with a plain assertion on its return value
 (no DOM, no rendering), it belongs in `geometry.js` or `interactions.js`.
 If it has to build or inspect actual DOM nodes, it belongs in `render.js`.
 If it's wiring — reading a checkbox, calling `.focus()`, deciding which
-function to call next — it can stay in `index.html`.
+function to call next, or anything that only makes sense once you know
+whether you're running standalone or inside HA — it stays in
+`index.html`/`floorplan-card.js` respectively, and doesn't need its own
+unit tests as long as the modules it calls into are covered.
+
+## Persistence
+
+`floorplan-card.js` currently stores the floor plan in the **dashboard's
+own config** (the same YAML/storage Lovelace already keeps card configs
+in): `setConfig({ floors })` reads it in, and every edit calls `_persist()`,
+which dispatches a `config-changed` event — the standard mechanism Lovelace
+listens for on any card to write an updated config back.
+
+This is deliberately the simplest thing that works, not the final design.
+Its limits:
+- The floor plan lives and dies with one specific card on one specific
+  dashboard. Viewing or editing it from a second dashboard means a second,
+  independent copy.
+- No multi-user conflict handling — last save wins.
+
+The alternative is a proper `custom_components/floorplan_editor` backend
+integration using HA's `Store()` helper and websocket commands, giving
+every dashboard/user a shared, single source of truth. That's a real
+architecture decision, not just more code — `Store()` + a websocket API in
+Python, vs. the `config-changed` event you already have wired up
+correctly. Move to it when/if "the plan needs to be visible or editable
+from more than one place" actually becomes true, not preemptively.
 
 ## Data model
 

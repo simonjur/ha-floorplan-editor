@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Card harness</title>
+<style>body{margin:0;background:#111;} floorplan-card{display:block;height:600px;width:100%;}</style>
+</head>
+<body>
+<floorplan-card id="card"></floorplan-card>
+<script type="module">
+  import '../src/floorplan-card.js';
+  const card = document.getElementById('card');
+  // Mimic what Lovelace does after creating the element.
+  card.setConfig({});
+  card.hass = { states: {} };
+  window.__cardReady = true;
+</script>
+</body>
+</html>
