@@ -1,0 +1,16 @@
+{
+  "name": "floorplan-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Home Assistant floor plan editor card — draw rooms, bind entities, live state overlay.",
+  "scripts": {
+    "dev": "python3 -m http.server 8934 --directory src",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "jsdom": "^29.1.1"
+  }
+}

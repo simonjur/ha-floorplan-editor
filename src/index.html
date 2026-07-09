@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Floor Plan Editor — Prototype</title>
+<style>
+  :root {
+    --bg: #17191d;
+    --panel: #1f2227;
+    --panel-border: #2c3038;
+    --grid-line: #262a31;
+    --guide-line: #f6ad55;
+    --text: #d7dade;
+    --text-dim: #838993;
+    --accent: #5b8def;
+    --accent-dim: #395790;
+    --danger: #e5534b;
+    --mono: "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  #topbar {
+    display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--panel-border); flex-shrink: 0;
+  }
+  #floor-tabs { display: flex; gap: 4px; }
+  .floor-tab {
+    padding: 6px 12px; border-radius: 6px; background: transparent; color: var(--text-dim);
+    border: 1px solid transparent; cursor: pointer; font-size: 13px;
+  }
+  .floor-tab.active { background: var(--accent-dim); color: var(--text); }
+  .floor-tab:hover:not(.active) { border-color: var(--panel-border); }
+  #add-floor {
+    background: none; border: 1px dashed var(--panel-border); color: var(--text-dim);
+    border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+  }
+  .divider { width: 1px; height: 22px; background: var(--panel-border); }
+  button.tool {
+    background: var(--panel); border: 1px solid var(--panel-border); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  button.tool:hover { border-color: var(--accent-dim); }
+  button.tool.active { background: var(--accent); border-color: var(--accent); color: #10131a; font-weight: 600; }
+  label.checkbox { font-size: 13px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  #hint { margin-left: auto; font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+  #warn {
+    font-size: 12px; color: var(--danger); font-family: var(--mono); min-width: 0;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  #warn.show { opacity: 1; }
+
+  #body { flex: 1; display: flex; overflow: hidden; }
+  #sidebar {
+    width: 260px; background: var(--panel); border-right: 1px solid var(--panel-border);
+    display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
+  }
+  #sidebar h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim);
+    margin: 14px 14px 6px;
+  }
+  #room-list { list-style: none; margin: 0; padding: 0 8px; }
+  #room-list li {
+    display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px;
+    cursor: pointer; font-size: 13px; color: var(--text);
+  }
+  #room-list li:hover { background: #ffffff08; }
+  #room-list li.selected { background: var(--accent-dim); }
+  #room-list .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  #room-list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #room-list .empty { color: var(--text-dim); font-size: 12px; font-style: italic; padding: 4px; }
+
+  #inspector { padding: 12px 14px; border-top: 1px solid var(--panel-border); }
+  #inspector input[type=text] {
+    width: 100%; background: var(--bg); border: 1px solid var(--panel-border); color: var(--text);
+    padding: 6px 8px; border-radius: 5px; font-size: 13px; margin-bottom: 8px;
+  }
+  #inspector .row { display: flex; gap: 6px; }
+  #inspector button {
+    flex: 1; background: var(--bg); border: 1px solid var(--panel-border); color: var(--text);
+    padding: 6px 8px; border-radius: 5px; cursor: pointer; font-size: 12px;
+  }
+  #inspector button.danger { color: var(--danger); border-color: #e5534b55; }
+  #inspector .empty { color: var(--text-dim); font-size: 12px; font-style: italic; }
+  #inspector .entity-note {
+    font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.5;
+    border-top: 1px dashed var(--panel-border); padding-top: 8px;
+  }
+
+  #footer-actions { margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--panel-border); display: flex; gap: 8px; }
+  #footer-actions button {
+    flex: 1; background: var(--bg); border: 1px solid var(--panel-border); color: var(--text);
+    padding: 7px; border-radius: 5px; cursor: pointer; font-size: 12px;
+  }
+
+  #canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+  svg { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+  svg.select-mode { cursor: default; }
+
+  #zoom-controls {
+    position: absolute; right: 16px; bottom: 16px; z-index: 5;
+    display: flex; flex-direction: column; align-items: stretch;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px;
+    overflow: hidden; box-shadow: 0 2px 10px #00000055;
+  }
+  #zoom-controls button {
+    width: 40px; height: 40px; background: transparent; border: none; color: var(--text);
+    font-size: 18px; cursor: pointer; touch-action: manipulation;
+  }
+  #zoom-controls button:hover { background: #ffffff10; }
+  #zoom-controls button:active { background: #ffffff1a; }
+  #zoom-level {
+    font-size: 10px; font-family: var(--mono); color: var(--text-dim); text-align: center;
+    padding: 4px 0; border-top: 1px solid var(--panel-border); border-bottom: 1px solid var(--panel-border);
+    cursor: pointer; user-select: none;
+  }
+  #zoom-level:hover { color: var(--text); }
+
+  .room-polygon { stroke-width: 1.5; }
+  .room-polygon.selected { stroke-width: 2.5; }
+  .room-polygon.invalid { stroke: var(--danger) !important; fill: #e5534b33 !important; }
+  .room-label { fill: var(--text); font-size: 12px; font-family: var(--mono); pointer-events: none; user-select: none; }
+  .vertex-handle { fill: var(--bg); stroke: var(--accent); stroke-width: 2; cursor: grab; }
+  .vertex-handle:hover { fill: var(--accent); }
+  .draft-line { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; }
+  .draft-point { fill: var(--accent); }
+  .draft-point.first { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .guide-line { stroke: var(--guide-line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .measure-hit { fill: var(--bg); stroke: var(--panel-border); stroke-width: 1; cursor: text; }
+  .measure-hit:hover { stroke: var(--accent); }
+  .measure-text { fill: var(--text-dim); font-size: 10px; font-family: var(--mono); pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+
+  #length-input {
+    position: absolute; z-index: 10; font-family: var(--mono); font-size: 11px;
+    background: var(--bg); border: 1px solid var(--accent); color: var(--text);
+    padding: 2px 4px; border-radius: 3px; width: 60px; text-align: center;
+  }
+
+  #hamburger {
+    display: none;
+    background: var(--panel); border: 1px solid var(--panel-border); color: var(--text);
+    width: 34px; height: 34px; border-radius: 6px; cursor: pointer; font-size: 16px;
+    align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  #sidebar-backdrop { display: none; }
+
+  /* ---------- Mobile layout ---------- */
+  @media (max-width: 760px) {
+    #hamburger { display: flex; }
+    #hint { display: none; }
+    #topbar { padding: 8px 10px; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
+    #floor-tabs { overflow-x: auto; max-width: 55vw; scrollbar-width: none; }
+    #floor-tabs::-webkit-scrollbar { display: none; }
+    .floor-tab { flex-shrink: 0; }
+    button.tool { padding: 8px 12px; touch-action: manipulation; }
+    #add-floor { touch-action: manipulation; }
+
+    #sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; z-index: 30;
+      width: 82vw; max-width: 320px;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      box-shadow: 2px 0 16px #00000066;
+    }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar-backdrop.open {
+      display: block; position: fixed; inset: 0; background: #00000066; z-index: 20;
+    }
+    #room-list li { padding: 12px 8px; }
+    #inspector button, #footer-actions button { padding: 11px 8px; }
+    .vertex-handle { r: 10; }
+  }
+</style>
+</head>
+<body>
+
+  <div id="sidebar-backdrop"></div>
+
+  <div id="topbar">
+    <button id="hamburger">☰</button>
+    <div id="floor-tabs"></div>
+    <button id="add-floor">+ Floor</button>
+    <div class="divider"></div>
+    <button class="tool" id="btn-draw">✏️ Draw Room</button>
+    <button class="tool active" id="btn-select">↖ Select</button>
+    <div class="divider"></div>
+    <label class="checkbox"><input type="checkbox" id="snap-toggle" checked> Snap to grid</label>
+    <label class="checkbox"><input type="checkbox" id="measure-toggle" checked> Show measurements</label>
+    <div id="warn">⚠ would overlap another room</div>
+    <div id="hint">Click to place points · double-click or click first point to close</div>
+  </div>
+
+  <div id="body">
+    <div id="sidebar">
+      <h3>Rooms</h3>
+      <ul id="room-list"></ul>
+      <div id="inspector"></div>
+      <div id="footer-actions">
+        <button id="btn-export">Export JSON</button>
+        <button id="btn-import">Import JSON</button>
+      </div>
+    </div>
+    <div id="canvas-wrap">
+      <svg id="canvas"></svg>
+      <div id="zoom-controls">
+        <button id="zoom-in" title="Zoom in">+</button>
+        <div id="zoom-level" title="Reset to 100%">100%</div>
+        <button id="zoom-out" title="Zoom out">−</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" accept="application/json" style="display:none">
+
+<script type="module">
+import {
+  worldFromScreen, screenFromWorld, snapPoint,
+  tryAddRoom, deleteRoom, tryMoveVertex, tryTranslateRoom,
+  weldVertexOnRelease, tryResizeWall, computeZoomTransition, fmtLength,
+} from './interactions.js';
+import {
+  renderCanvas as renderCanvasDom,
+  renderRoomList as renderRoomListDom,
+  renderFloorTabs as renderFloorTabsDom,
+  renderInspector as renderInspectorDom,
+} from './render.js';
+
+// This file is intentionally thin: it holds mutable app state, wires DOM
+// events, and calls into interactions.js (decisions) and render.js
+// (DOM output). It should not grow new geometry/snapping/overlap logic —
+// that belongs in interactions.js, next to its tests. See SPEC.md.
+
+(function () {
+  const GRID = 25;               // px per grid cell
+  const PX_PER_METER = 50;       // scale: 50px = 1m
+  const CLOSE_THRESHOLD = 12;    // px, closing a drawn polygon
+  const SNAP_WELD_DIST = 12;     // px, snap+weld onto an existing vertex
+  const SNAP_AXIS_DIST = 7;      // px, axis alignment guide threshold
+  const COLORS = ["#5b8def", "#4fd1c5", "#f6ad55", "#f687b3", "#9f7aea", "#68d391"];
+  const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2]; // 5 discrete levels, like a map widget
+
+  // ---------- State ----------
+  // floor.vertices: { [vid]: {x, y} }   — shared points, source of truth for geometry, in WORLD space
+  // room.vertexIds: [vid, vid, ...]     — polygon winding order, references into floor.vertices
+  let state = {
+    floors: [{ id: "floor-1", name: "Ground Floor", vertices: {}, rooms: [] }],
+    currentFloorId: "floor-1",
+    selectedRoomId: null,
+  };
+
+  let zoomIndex = 2; // starts at 1x
+  // The pan/zoom viewport. World coordinates (room vertices, drawingPoints,
+  // mousePos) never change with pan/zoom — only this transform does.
+  let view = { panX: 0, panY: 0, zoom: ZOOM_LEVELS[zoomIndex] };
+  let isPanKeyHeld = false;
+
+  let mode = "select";
+  let drawingPoints = [];  // [{x,y,weldVid?}] — world coords
+  let dragging = null;     // {type:'vertex'|'room'|'pan', ...}
+  let mousePos = { x: 0, y: 0 }; // world coords
+  let guides = [];         // active alignment guide lines during drag
+  // Always empty today — the "highlight overlapping room red mid-drag"
+  // feature was scaffolded (see render.js's .invalid class) but never
+  // actually wired up to be populated. Harmless; flagged here rather than
+  // silently left a mystery if someone goes looking for why it never fires.
+  let invalidRoomIds = new Set();
+
+  const svg = document.getElementById("canvas");
+  const roomListEl = document.getElementById("room-list");
+  const inspectorEl = document.getElementById("inspector");
+  const floorTabsEl = document.getElementById("floor-tabs");
+  const warnEl = document.getElementById("warn");
+
+  function currentFloor() { return state.floors.find(f => f.id === state.currentFloorId); }
+  function selectedRoom() {
+    const f = currentFloor();
+    return f ? f.rooms.find(r => r.id === state.selectedRoomId) : null;
+  }
+  function snapGrid(v) {
+    return document.getElementById("snap-toggle").checked ? Math.round(v / GRID) * GRID : Math.round(v);
+  }
+  // Raw pixel position relative to the canvas, in SCREEN space (not affected by pan/zoom).
+  function screenPoint(evt) {
+    const rect = svg.getBoundingClientRect();
+    return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+  }
+  function snapCurrent(rawX, rawY, excludeVid) {
+    const result = snapPoint(currentFloor(), view, rawX, rawY, excludeVid, {
+      snapToGrid: document.getElementById("snap-toggle").checked,
+      grid: GRID, weldDist: SNAP_WELD_DIST, axisDist: SNAP_AXIS_DIST,
+    });
+    guides = result.guides;
+    return result;
+  }
+
+  // ---------- Rendering orchestration ----------
+  function render() {
+    renderTopbar();
+    renderFloorTabsDom(floorTabsEl, state.floors, state.currentFloorId, { onSelectFloor: selectFloor });
+    renderCanvas();
+    renderRoomListDom(roomListEl, currentFloor(), state.selectedRoomId, { onSelectRoom: selectRoom });
+    renderInspectorDom(inspectorEl, selectedRoom(), { onRename: renameSelectedRoom, onDelete: deleteSelectedRoom });
+  }
+  function renderTopbar() {
+    document.getElementById("btn-draw").classList.toggle("active", mode === "draw");
+    document.getElementById("btn-select").classList.toggle("active", mode === "select");
+    svg.classList.toggle("select-mode", mode === "select");
+  }
+  function renderCanvas() {
+    const appState = {
+      floor: currentFloor(),
+      selectedRoomId: state.selectedRoomId,
+      invalidRoomIds, guides, mode, drawingPoints, mousePos, view,
+      showMeasurements: document.getElementById("measure-toggle").checked,
+    };
+    renderCanvasDom(svg, appState, GRID, (px) => fmtLength(px, PX_PER_METER), {
+      onRoomPointerDown,
+      onVertexPointerDown,
+      onMeasurementEdit: (edge, lx, ly, len) => startLengthEdit(edge, lx, ly, len),
+    });
+  }
+
+  // ---------- Selection / floor / room list callbacks ----------
+  function selectFloor(floorId) {
+    state.currentFloorId = floorId;
+    state.selectedRoomId = null;
+    cancelDraw();
+    render();
+  }
+  function selectRoom(roomId) {
+    state.selectedRoomId = roomId;
+    mode = "select";
+    render();
+    closeDrawer();
+  }
+  function renameSelectedRoom(newName) {
+    const room = selectedRoom();
+    if (!room) return;
+    room.name = newName;
+    renderRoomListDom(roomListEl, currentFloor(), state.selectedRoomId, { onSelectRoom: selectRoom });
+    renderCanvas();
+  }
+  function deleteSelectedRoom() {
+    const room = selectedRoom();
+    if (!room) return;
+    deleteRoom(currentFloor(), room.id);
+    state.selectedRoomId = null;
+    render();
+  }
+
+  // ---------- Zoom ----------
+  function canvasCenter() {
+    const rect = svg.getBoundingClientRect();
+    return { x: rect.width / 2, y: rect.height / 2 };
+  }
+  function updateZoomLabel() {
+    const labelEl = document.getElementById("zoom-level");
+    if (labelEl) labelEl.textContent = Math.round(view.zoom * 100) + "%";
+  }
+  function applyZoom(newIndex, screenCenter) {
+    const transition = computeZoomTransition(ZOOM_LEVELS, zoomIndex, newIndex, view, screenCenter);
+    if (!transition) return;
+    zoomIndex = transition.index;
+    view = transition.view;
+    renderCanvas();
+    updateZoomLabel();
+  }
+
+  // ---------- Panning ----------
+  function beginPanDrag(screen) {
+    dragging = { type: "pan", startScreenX: screen.x, startScreenY: screen.y, startPanX: view.panX, startPanY: view.panY };
+    svg.style.cursor = "grabbing";
+  }
+
+  // ---------- Draw mode ----------
+  function cancelDraw() { drawingPoints = []; guides = []; }
+  function flashWarn() {
+    warnEl.classList.add("show");
+    setTimeout(() => warnEl.classList.remove("show"), 1400);
+  }
+  function finishRoom() {
+    const floor = currentFloor();
+    const result = tryAddRoom(floor, drawingPoints, COLORS, floor.rooms.length, "Room " + (floor.rooms.length + 1));
+    if (!result.ok) {
+      if (result.reason === "overlap") flashWarn();
+      cancelDraw();
+      mode = "select";
+      render();
+      return;
+    }
+    state.selectedRoomId = result.room.id;
+    cancelDraw();
+    mode = "select";
+    render();
+  }
+
+  // ---------- Vertex / room dragging ----------
+  function onVertexPointerDown(e, vid) {
+    e.stopPropagation();
+    if (isPanKeyHeld) { beginPanDrag(screenPoint(e)); return; }
+    dragging = { type: "vertex", vid };
+  }
+  function onRoomPointerDown(e, room) {
+    if (isPanKeyHeld) { e.stopPropagation(); beginPanDrag(screenPoint(e)); return; }
+    if (mode !== "select") return;
+    e.stopPropagation();
+    state.selectedRoomId = room.id;
+    const p = worldFromScreen(view, screenPoint(e).x, screenPoint(e).y);
+    const floor = currentFloor();
+    const snapshot = {};
+    room.vertexIds.forEach(vid => { snapshot[vid] = { ...floor.vertices[vid] }; });
+    dragging = { type: "room", roomId: room.id, startX: p.x, startY: p.y, snapshot };
+    render();
+  }
+
+  svg.addEventListener("pointerdown", (e) => {
+    const screen = screenPoint(e);
+    if (isPanKeyHeld) { beginPanDrag(screen); return; }
+    if (mode === "select") {
+      // Reached the raw canvas (not a room/vertex, which stopPropagation
+      // before this fires) while in select mode — treat as empty space.
+      beginPanDrag(screen);
+      return;
+    }
+    if (mode !== "draw") return;
+    const p = worldFromScreen(view, screen.x, screen.y);
+    if (drawingPoints.length >= 3) {
+      const first = drawingPoints[0];
+      // Compare in screen space: `first` was stored already grid-snapped,
+      // `screen` here is the raw click. Diffing in world units mixes a
+      // snapped value with an unsnapped one, and that gap grows with
+      // pan/zoom — projecting both to screen space avoids the mismatch.
+      const firstScreen = screenFromWorld(view, first.x, first.y);
+      if (Math.hypot(firstScreen.x - screen.x, firstScreen.y - screen.y) <= CLOSE_THRESHOLD) { finishRoom(); return; }
+    }
+    const snapped = snapCurrent(p.x, p.y, null);
+    drawingPoints.push(snapped);
+    // Mouse users have already hovered here so mousePos is correct, but a
+    // touch tap fires with no preceding pointermove — mousePos would still
+    // be sitting at its stale default, drawing a phantom preview line back
+    // to it. Sync it to the point we just placed.
+    mousePos = { x: snapped.x, y: snapped.y };
+    renderCanvas();
+  });
+  svg.addEventListener("dblclick", (e) => { if (mode === "draw") { e.preventDefault(); finishRoom(); } });
+
+  svg.addEventListener("pointermove", (e) => {
+    const screen = screenPoint(e);
+
+    if (dragging && dragging.type === "pan") {
+      view.panX = dragging.startPanX + (screen.x - dragging.startScreenX);
+      view.panY = dragging.startPanY + (screen.y - dragging.startScreenY);
+      renderCanvas();
+      return;
+    }
+
+    const p = worldFromScreen(view, screen.x, screen.y);
+    mousePos = p;
+
+    if (dragging && dragging.type === "vertex") {
+      const floor = currentFloor();
+      const snapped = snapCurrent(p.x, p.y, dragging.vid);
+      tryMoveVertex(floor, dragging.vid, { x: snapped.x, y: snapped.y });
+      renderCanvas();
+      return;
+    }
+    if (dragging && dragging.type === "room") {
+      const floor = currentFloor();
+      const room = floor.rooms.find(r => r.id === dragging.roomId);
+      const dx = snapGrid(p.x - dragging.startX), dy = snapGrid(p.y - dragging.startY);
+      tryTranslateRoom(floor, room, dragging.snapshot, dx, dy);
+      renderCanvas();
+      return;
+    }
+    if (mode === "draw" && drawingPoints.length > 0) {
+      const snapped = snapCurrent(p.x, p.y, null);
+      mousePos = { x: snapped.x, y: snapped.y };
+      renderCanvas();
+    }
+  });
+
+  window.addEventListener("pointerup", () => {
+    // Only reconcile if we were actually dragging something on the canvas.
+    // Calling render() unconditionally here was the bug: it tears down and
+    // rebuilds DOM elements (floor tabs, room list items, measurement labels)
+    // on every pointerup anywhere on the page — including a plain click on
+    // a button. If that element gets replaced between mousedown and mouseup,
+    // the browser cancels the native "click" event before its handler runs.
+    if (!dragging) return;
+
+    if (dragging.type === "pan") {
+      svg.style.cursor = isPanKeyHeld ? "grab" : "";
+      dragging = null;
+      return; // no room/vertex geometry changed — nothing to re-render
+    }
+
+    if (dragging.type === "vertex") {
+      weldVertexOnRelease(currentFloor(), dragging.vid);
+    }
+    dragging = null;
+    guides = [];
+    render();
+  });
+
+  document.getElementById("btn-draw").onclick = () => { mode = "draw"; state.selectedRoomId = null; drawingPoints = []; render(); closeDrawer(); };
+  document.getElementById("btn-select").onclick = () => { mode = "select"; cancelDraw(); render(); };
+  document.getElementById("measure-toggle").onchange = renderCanvas;
+  document.getElementById("add-floor").onclick = () => {
+    const n = state.floors.length + 1;
+    const floor = { id: "floor-" + Math.random().toString(36).slice(2, 9), name: "Floor " + n, vertices: {}, rooms: [] };
+    state.floors.push(floor); state.currentFloorId = floor.id; state.selectedRoomId = null; render();
+  };
+
+  // ---------- Mobile drawer ----------
+  const sidebarEl = document.getElementById("sidebar");
+  const backdropEl = document.getElementById("sidebar-backdrop");
+  function openDrawer() { sidebarEl.classList.add("open"); backdropEl.classList.add("open"); }
+  function closeDrawer() { sidebarEl.classList.remove("open"); backdropEl.classList.remove("open"); }
+  document.getElementById("hamburger").onclick = () => {
+    sidebarEl.classList.contains("open") ? closeDrawer() : openDrawer();
+  };
+  backdropEl.onclick = closeDrawer;
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { if (mode === "draw") cancelDraw(); state.selectedRoomId = null; mode = "select"; render(); }
+    if (e.key === "Enter" && mode === "draw") finishRoom();
+    if (e.key === "Backspace" && mode === "draw" && drawingPoints.length) { drawingPoints.pop(); renderCanvas(); }
+    if (e.key === "m" || e.key === "M") {
+      if (!isPanKeyHeld) { isPanKeyHeld = true; svg.style.cursor = "grab"; }
+    }
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key === "m" || e.key === "M") {
+      isPanKeyHeld = false;
+      if (!dragging) svg.style.cursor = "";
+    }
+  });
+
+  // ---------- Zoom controls ----------
+  document.getElementById("zoom-in").onclick = () => applyZoom(zoomIndex + 1, canvasCenter());
+  document.getElementById("zoom-out").onclick = () => applyZoom(zoomIndex - 1, canvasCenter());
+  document.getElementById("zoom-level").onclick = () => applyZoom(2, canvasCenter()); // reset to 100%
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const dir = e.deltaY > 0 ? -1 : 1;
+    applyZoom(zoomIndex + dir, screenPoint(e));
+  }, { passive: false });
+  updateZoomLabel();
+
+  // ---------- Editable wall length ----------
+  function startLengthEdit(edge, lx, ly, currentLenPx) {
+    const existing = document.getElementById("length-input");
+    if (existing) existing.remove();
+    const rect = svg.getBoundingClientRect();
+    const screen = screenFromWorld(view, lx, ly); // label position is in world coords — convert for absolute CSS positioning
+    const input = document.createElement("input");
+    input.id = "length-input";
+    input.value = fmtLength(currentLenPx, PX_PER_METER);
+    input.style.left = (rect.left + screen.x - 30) + "px";
+    input.style.top = (rect.top + screen.y - 9) + "px";
+    document.body.appendChild(input);
+    input.focus(); input.select();
+
+    // Removing a focused element fires its own "blur" event, so both the
+    // Enter/Escape keydown handlers and the blur handler can end up calling
+    // this after the node is already gone. Guard with a flag so it only
+    // ever runs once.
+    let settled = false;
+    function commit() {
+      if (settled) return;
+      settled = true;
+      const meters = parseFloat(input.value);
+      input.remove();
+      if (isNaN(meters) || meters <= 0) return;
+      const result = tryResizeWall(currentFloor(), edge, meters * PX_PER_METER);
+      if (!result.ok) flashWarn();
+      render();
+    }
+    function cancel() {
+      if (settled) return;
+      settled = true;
+      input.remove();
+    }
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      if (e.key === "Escape") { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener("blur", commit);
+  }
+
+  // ---------- Export / Import ----------
+  document.getElementById("btn-export").onclick = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "floorplan.json"; a.click();
+    URL.revokeObjectURL(url);
+  };
+  document.getElementById("btn-import").onclick = () => document.getElementById("file-input").click();
+  document.getElementById("file-input").onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { const data = JSON.parse(reader.result); if (data.floors) { state = data; render(); } }
+      catch (err) { alert("Invalid JSON file"); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  window.addEventListener("resize", renderCanvas);
+  render();
+})();
+</script>
+</body>
+</html>
