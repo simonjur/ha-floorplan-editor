@@ -89,11 +89,59 @@ rebuilding, a hard refresh (Ctrl+Shift+R) is usually necessary, and if
 that's not enough, bump the resource URL's version query string
 (`/local/floorplan-card.js?v=2`) in the resource config to force a refetch.
 
-**Distributing it later via HACS** (once this is further along): HACS
-custom repositories work from a GitHub repo + a release/tag containing the
-built `dist/floorplan-card.js` — same single-file requirement, just
-automated fetching/updating instead of manual copy. Not worth setting up
-until the card itself is further along.
+## Installing it via HACS (GitHub, auto-updating)
+
+This is the no-manual-copy path for a real HA instance somewhere else on
+your network (homelab, separate container, etc.): you push a version tag,
+GitHub Actions builds `dist/floorplan-card.js` and attaches it to a
+Release, and HACS on your HA pulls it. Updating later is one click in HACS
+plus a browser refresh — you never touch the HA filesystem.
+
+`dist/` is git-ignored and built in CI, so nothing built is ever committed.
+The pieces that make this work already live in the repo:
+
+- `.github/workflows/release.yml` — on a pushed `v*` tag, runs
+  `npm ci && npm test && npm run build` and publishes a GitHub Release with
+  `dist/floorplan-card.js` as an asset.
+- `hacs.json` — tells HACS this repo is a Lovelace plugin and which file to
+  fetch (`floorplan-card.js`).
+
+### One-time setup on your HA instance
+
+1. **Have [HACS](https://hacs.xyz) installed** (if not, follow its docs
+   first — it's a one-time integration install).
+2. **Add this repo as a custom repository** — HACS → ⋮ (top right) →
+   *Custom repositories*:
+   - Repository: `simonjur/ha-floorplan-editor`
+   - Type: **Dashboard** (a.k.a. Lovelace/Plugin)
+3. **Install it** — the card now shows up in HACS; open it and click
+   *Download*. HACS downloads the release asset into `www/community/…` and,
+   on current HA, registers the Lovelace resource for you automatically.
+   (If your HA is in YAML/storage mode where HACS can't auto-register, add
+   the resource once by hand — URL is whatever HACS shows on the card's
+   page, type *JavaScript Module*.)
+4. **Add the card to a dashboard** — same as step 4 above: a **Manual**
+   card with `type: custom:floorplan-card`.
+
+### The release loop (what you do from now on)
+
+```
+# make changes, commit, then:
+npm version patch          # bumps package.json, creates the git tag
+git push && git push --tags
+```
+
+Pushing the tag triggers the workflow; watch it under the repo's **Actions**
+tab. When it finishes there's a new Release. In HACS the card then shows an
+**Update available** badge — click *Update*, then hard-refresh the
+dashboard (Ctrl+Shift+R; HACS bumps the resource's version query string, so
+usually one refresh is enough). No SSH, no `cp`, no editing files on the HA
+box.
+
+(`npm version patch` is just a convenience — any `git tag vX.Y.Z &&
+git push --tags` works. The tag name only has to start with `v` to match
+the workflow trigger. The build fails the release if `npm test` fails, so a
+broken bundle never ships.)
 
 ## Tests
 
