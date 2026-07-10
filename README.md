@@ -113,7 +113,10 @@ The pieces that make this work already live in the repo:
 2. **Add this repo as a custom repository** — HACS → ⋮ (top right) →
    *Custom repositories*:
    - Repository: `simonjur/ha-floorplan-editor`
-   - Type: **Dashboard** (a.k.a. Lovelace/Plugin)
+   - Type: **Dashboard** (a.k.a. Lovelace/Plugin) — make sure you pick
+     **Dashboard** and **not AppDaemon**. If you get
+     `… is not a valid app repository`, the Type was set to *AppDaemon apps*;
+     remove the entry and re-add it with Type *Dashboard*.
 3. **Install it** — the card now shows up in HACS; open it and click
    *Download*. HACS downloads the release asset into `www/community/…` and,
    on current HA, registers the Lovelace resource for you automatically.
