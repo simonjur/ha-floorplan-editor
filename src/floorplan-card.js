@@ -69,6 +69,27 @@ const STYLE = `
   }
   #warn.show { opacity: 1; }
 
+  /* ---------- View mode (dashboard is being viewed, not edited) ----------
+     Home Assistant sets .preview / .editMode = true on a card only while
+     the dashboard is in edit mode (see hui-view). In plain view mode we
+     strip the whole editing chrome down to a read-only floor plan with just
+     the floor switcher (+ zoom/pan for navigating a large plan). The
+     interaction handlers are separately gated in JS on this._editMode, so
+     hiding here is presentation only, not the enforcement. */
+  .card-root.view-mode #btn-draw,
+  .card-root.view-mode #btn-select,
+  .card-root.view-mode #add-floor,
+  .card-root.view-mode .divider,
+  .card-root.view-mode label.checkbox,
+  .card-root.view-mode #hint,
+  .card-root.view-mode #warn,
+  .card-root.view-mode #hamburger,
+  .card-root.view-mode #sidebar,
+  .card-root.view-mode #sidebar-backdrop { display: none; }
+  .card-root.view-mode #topbar { min-height: 0; }
+  .card-root.view-mode svg { cursor: default; }
+  .card-root.view-mode .measure-hit { pointer-events: none; cursor: default; }
+
   #body { flex: 1; display: flex; overflow: hidden; }
   #sidebar {
     width: 260px; background: var(--panel); border-right: 1px solid var(--panel-border);
@@ -256,6 +277,11 @@ class FloorplanCard extends HTMLElement {
     this._zoomIndex = 2;
     this._view = { panX: 0, panY: 0, zoom: ZOOM_LEVELS[this._zoomIndex] };
     this._isPanKeyHeld = false;
+    // Home Assistant flips this to true (via the `preview`/`editMode`
+    // property) only while the dashboard is in edit mode; defaults to false
+    // so a freshly-loaded card in a viewed dashboard is read-only. All the
+    // editing UI and interactions are gated on it. See the `preview` setter.
+    this._editMode = false;
     this._mode = "select";
     this._drawingPoints = [];
     this._dragging = null;
@@ -276,8 +302,43 @@ class FloorplanCard extends HTMLElement {
     this._floorTabsEl = this._$("#floor-tabs");
     this._warnEl = this._$("#warn");
 
+    this._cardRootEl = this._$(".card-root");
     this._bindDom();
+    this._applyModeChrome();
     this._render();
+  }
+
+  // ---------- Edit vs view mode ----------
+  // Home Assistant sets BOTH `preview` (current API) and `editMode` (legacy
+  // alias) on the card element, to the same boolean, whenever the dashboard
+  // enters/leaves edit mode. We accept either and funnel into one flag so
+  // the card is read-only when the dashboard is merely being viewed, and a
+  // full editor only while it's being edited (which is also the only time HA
+  // persists our `config-changed` events — so gating edits here is what makes
+  // saving actually work).
+  set preview(v) { this._setEditMode(v); }
+  get preview() { return this._editMode; }
+  set editMode(v) { this._setEditMode(v); }
+  get editMode() { return this._editMode; }
+
+  _setEditMode(on) {
+    const next = !!on;
+    if (next === this._editMode) return;
+    this._editMode = next;
+    if (!next) {
+      // Leaving edit mode: drop any in-progress editing state so the
+      // read-only view is clean.
+      this._mode = "select";
+      this._cancelDraw();
+      this._state.selectedRoomId = null;
+      if (this._closeDrawer) this._closeDrawer();
+    }
+    this._applyModeChrome();
+    this._render();
+  }
+
+  _applyModeChrome() {
+    if (this._cardRootEl) this._cardRootEl.classList.toggle("view-mode", !this._editMode);
   }
 
   // ---------- Lovelace card contract ----------
@@ -447,11 +508,16 @@ class FloorplanCard extends HTMLElement {
 
   // ---------- Vertex / room dragging ----------
   _onVertexPointerDown(e, vid) {
+    // View mode: let the event bubble to the SVG pan handler; no vertex edit.
+    if (!this._editMode) return;
     e.stopPropagation();
     if (this._isPanKeyHeld) { this._beginPanDrag(this._screenPoint(e)); return; }
     this._dragging = { type: "vertex", vid };
   }
   _onRoomPointerDown(e, room) {
+    // View mode: don't select or drag — fall through (no stopPropagation) so
+    // the SVG's pointerdown pans the canvas, same as clicking empty space.
+    if (!this._editMode) return;
     if (this._isPanKeyHeld) { e.stopPropagation(); this._beginPanDrag(this._screenPoint(e)); return; }
     if (this._mode !== "select") return;
     e.stopPropagation();
@@ -572,9 +638,13 @@ class FloorplanCard extends HTMLElement {
     // another card entirely.
     window.addEventListener("keydown", (e) => {
       if (!this._pointerOverCanvas) return;
-      if (e.key === "Escape") { if (this._mode === "draw") this._cancelDraw(); this._state.selectedRoomId = null; this._mode = "select"; this._render(); }
-      if (e.key === "Enter" && this._mode === "draw") this._finishRoom();
-      if (e.key === "Backspace" && this._mode === "draw" && this._drawingPoints.length) { this._drawingPoints.pop(); this._renderCanvas(); }
+      // Editing shortcuts only when the dashboard is in edit mode; the pan
+      // key (m) stays live in both modes as a pure navigation aid.
+      if (this._editMode) {
+        if (e.key === "Escape") { if (this._mode === "draw") this._cancelDraw(); this._state.selectedRoomId = null; this._mode = "select"; this._render(); }
+        if (e.key === "Enter" && this._mode === "draw") this._finishRoom();
+        if (e.key === "Backspace" && this._mode === "draw" && this._drawingPoints.length) { this._drawingPoints.pop(); this._renderCanvas(); }
+      }
       if (e.key === "m" || e.key === "M") {
         if (!this._isPanKeyHeld) { this._isPanKeyHeld = true; this._svg.style.cursor = "grab"; }
       }
@@ -623,6 +693,7 @@ class FloorplanCard extends HTMLElement {
 
   // ---------- Editable wall length ----------
   _startLengthEdit(edge, lx, ly, currentLenPx) {
+    if (!this._editMode) return; // wall lengths are read-only in view mode
     const existing = this.shadowRoot.getElementById("length-input");
     if (existing) existing.remove();
     const rect = this._svg.getBoundingClientRect();

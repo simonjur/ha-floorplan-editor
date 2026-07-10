@@ -1,16 +1,43 @@
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>Card harness</title>
-<style>body{margin:0;background:#111;} floorplan-card{display:block;height:600px;width:100%;}</style>
+<style>
+  body{margin:0;background:#111;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;}
+  floorplan-card{display:block;height:600px;width:100%;}
+  #harness-bar{
+    display:flex;align-items:center;gap:12px;padding:8px 12px;
+    background:#000;color:#aaa;font-size:13px;border-bottom:1px solid #222;
+  }
+  #harness-bar button{
+    background:#1f2227;color:#d7dade;border:1px solid #2c3038;
+    padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;
+  }
+  #harness-bar .mode{font-family:monospace;color:#5b8def;}
+</style>
 </head>
 <body>
+<!-- Not shipped to HA — a stand-in for Lovelace so the card can be driven in
+     a plain browser tab. The toggle mimics HA flipping card.preview /
+     card.editMode when the dashboard enters/leaves edit mode. -->
+<div id="harness-bar">
+  <button id="toggle">Toggle edit/view</button>
+  <span>mode: <span class="mode" id="mode-label">edit</span></span>
+</div>
 <floorplan-card id="card"></floorplan-card>
 <script type="module">
   import '../src/floorplan-card.js';
   const card = document.getElementById('card');
+  const label = document.getElementById('mode-label');
   // Mimic what Lovelace does after creating the element.
   card.setConfig({});
   card.hass = { states: {} };
+  // HA sets `preview` true only in dashboard edit mode; default the harness
+  // to edit mode so the drawing tools are exercised out of the box.
+  card.preview = true;
+  document.getElementById('toggle').onclick = () => {
+    card.preview = !card.preview;
+    label.textContent = card.preview ? 'edit' : 'view';
+  };
   window.__cardReady = true;
 </script>
 </body>

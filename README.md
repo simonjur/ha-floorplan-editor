@@ -44,7 +44,31 @@ npm run dev:card   # serves the repo root at http://localhost:8935
 Open `http://localhost:8935/dev/card-harness.html`. It registers the
 element, calls `setConfig({})` and sets a stub `hass`, exactly like
 Lovelace would — everything (drawing, dragging, zoom, the `config-changed`
-persistence event) works the same as inside real HA.
+persistence event) works the same as inside real HA. The harness starts in
+**edit mode** and has a *Toggle edit/view* button that flips
+`card.preview` — the same property HA sets when a dashboard enters/leaves
+edit mode (see "View mode vs edit mode" below), so you can check the
+read-only view here too.
+
+### View mode vs edit mode
+
+The card is read-only when a dashboard is just being **viewed** and a full
+editor only while the dashboard is being **edited**. HA signals this by
+setting the card element's `preview` property (and its legacy alias
+`editMode`) to `true` in dashboard edit mode and `false` otherwise
+(`hui-view` does `element.preview = lovelace.editMode`). The card reads that
+into `this._editMode` (`floorplan-card.js`, the `preview` setter):
+
+- **View mode** (`preview === false`): only the floor switcher in the
+  topbar; no sidebar, tools, or add-floor; rooms render but can't be
+  drawn/moved/renamed/deleted and wall lengths aren't editable. Zoom/pan
+  stay live as read-only navigation aids.
+- **Edit mode** (`preview === true`): the full editor.
+
+This is also what makes saving work: the card persists by firing
+`config-changed`, which HA only writes back to storage while the dashboard
+is in edit mode — the exact time the editing UI is available. Draw while
+editing the dashboard, then use HA's normal dashboard save.
 
 ## Installing it in Home Assistant
 
@@ -72,10 +96,14 @@ persistence event) works the same as inside real HA.
    ```yaml
    type: custom:floorplan-card
    ```
-5. Draw a floor plan; edits save into that card's own dashboard config
-   automatically (see `SPEC.md`, "Persistence" — this is card-config
-   storage, not a backend integration, and that's a deliberate scope
-   choice for now, not a limitation to work around).
+5. Draw a floor plan **while the dashboard is in edit mode** — the drawing
+   tools and sidebar only appear then (see "View mode vs edit mode" below).
+   Edits are written into that card's own dashboard config via
+   `config-changed`, which HA persists when you leave edit mode / save the
+   dashboard. In normal view the card is read-only. (See `SPEC.md`,
+   "Persistence" — this is card-config storage, not a backend integration,
+   and that's a deliberate scope choice for now, not a limitation to work
+   around.)
 
 **Iterating without re-copying by hand every time:** either symlink instead
 of copying —
@@ -124,7 +152,9 @@ The pieces that make this work already live in the repo:
    the resource once by hand — URL is whatever HACS shows on the card's
    page, type *JavaScript Module*.)
 4. **Add the card to a dashboard** — same as step 4 above: a **Manual**
-   card with `type: custom:floorplan-card`.
+   card with `type: custom:floorplan-card`. Remember the card only shows
+   its drawing tools while the dashboard is in **edit mode**; in normal view
+   it's a read-only floor plan (see "View mode vs edit mode" below).
 
 ### The release loop (what you do from now on)
 
